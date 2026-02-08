@@ -482,9 +482,164 @@ with tab_results:
             fig_radar = _build_metrics_radar(history)
             st.plotly_chart(fig_radar, use_container_width=True)
 
+        # ---- Prompt Comparison Visual -----------------------------------------
+        st.divider()
+        st.subheader("Comparacao Visual dos Prompts")
+
+        # Collect every prompt that appeared across all iterations
+        all_prompts_timeline: list[dict] = []
+        for entry in history:
+            it = entry["iteration"]
+            for p in entry.get("prompts_used", []):
+                # Average score for this prompt in this iteration
+                evals = [
+                    e
+                    for e in entry.get("evaluations", [])
+                    if e["prompt_id"] == p["id"]
+                ]
+                avg = (
+                    sum(e["avg_score"] for e in evals) / len(evals)
+                    if evals
+                    else None
+                )
+                # Per-metric averages
+                metric_avgs: dict[str, float] = {}
+                if evals and evals[0].get("metrics"):
+                    for m_name in evals[0]["metrics"]:
+                        vals = [
+                            e["metrics"][m_name]["score"]
+                            for e in evals
+                            if m_name in e.get("metrics", {})
+                        ]
+                        metric_avgs[m_name] = (
+                            sum(vals) / len(vals) if vals else 0
+                        )
+                all_prompts_timeline.append(
+                    {
+                        "iteration": it,
+                        "id": p["id"],
+                        "name": p["name"],
+                        "rationale": p.get("rationale", ""),
+                        "template": p.get("template", ""),
+                        "avg_score": avg,
+                        "metrics": metric_avgs,
+                    }
+                )
+
+        if all_prompts_timeline:
+            # -- Score evolution line chart --
+            fig_line = go.Figure()
+            # Group by prompt name
+            seen: dict[str, list] = {}
+            for pt in all_prompts_timeline:
+                seen.setdefault(pt["name"], []).append(pt)
+            for pname, entries in seen.items():
+                entries.sort(key=lambda x: x["iteration"])
+                fig_line.add_trace(
+                    go.Scatter(
+                        x=[f"Iter {e['iteration']}" for e in entries],
+                        y=[e["avg_score"] for e in entries],
+                        mode="lines+markers+text",
+                        text=[
+                            f"{e['avg_score']:.2f}" if e["avg_score"] else ""
+                            for e in entries
+                        ],
+                        textposition="top center",
+                        name=pname,
+                    )
+                )
+            fig_line.update_layout(
+                title="Evolucao do Score Medio por Prompt",
+                yaxis_title="Score Medio",
+                xaxis_title="Iteracao",
+                yaxis=dict(range=[0, 1]),
+                height=400,
+            )
+            st.plotly_chart(fig_line, use_container_width=True)
+
+            # -- Per-metric grouped bar chart --
+            metric_names_set: list[str] = []
+            for pt in all_prompts_timeline:
+                for m in pt["metrics"]:
+                    if m not in metric_names_set:
+                        metric_names_set.append(m)
+
+            if metric_names_set:
+                fig_metrics = go.Figure()
+                for pt in all_prompts_timeline:
+                    label = f"Iter {pt['iteration']}: {pt['name']}"
+                    fig_metrics.add_trace(
+                        go.Bar(
+                            name=label,
+                            x=metric_names_set,
+                            y=[
+                                pt["metrics"].get(m, 0)
+                                for m in metric_names_set
+                            ],
+                            text=[
+                                f"{pt['metrics'].get(m, 0):.2f}"
+                                for m in metric_names_set
+                            ],
+                            textposition="auto",
+                        )
+                    )
+                fig_metrics.update_layout(
+                    title="Scores por Metrica — Todos os Prompts",
+                    yaxis_title="Score",
+                    yaxis=dict(range=[0, 1]),
+                    barmode="group",
+                    height=450,
+                )
+                st.plotly_chart(fig_metrics, use_container_width=True)
+
+            # -- Side-by-side prompt cards --
+            st.divider()
+            st.subheader("Timeline de Prompts")
+            for entry in history:
+                it = entry["iteration"]
+                st.markdown(
+                    f"<div class='iteration-header'>"
+                    f"Iteracao {it}</div>",
+                    unsafe_allow_html=True,
+                )
+                prompts_in_iter = [
+                    pt
+                    for pt in all_prompts_timeline
+                    if pt["iteration"] == it
+                ]
+                cols = st.columns(len(prompts_in_iter) or 1)
+                for idx, pt in enumerate(prompts_in_iter):
+                    with cols[idx]:
+                        score = pt["avg_score"]
+                        css = _score_class(score) if score is not None else ""
+                        score_str = f"{score:.2f}" if score is not None else "—"
+                        st.markdown(
+                            f"<div class='metric-box'>"
+                            f"<div style='font-size:0.9em;font-weight:bold'>"
+                            f"{pt['name']}</div>"
+                            f"<div class='{css}' style='margin:4px 0'>"
+                            f"{score_str}</div>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+                        st.caption(pt["rationale"][:200] if pt["rationale"] else "")
+                        with st.expander("Ver template"):
+                            st.code(pt["template"], language="text")
+
+                        # Mini metric breakdown
+                        if pt["metrics"]:
+                            for m_name, m_val in pt["metrics"].items():
+                                m_css = _score_class(m_val)
+                                st.markdown(
+                                    f"<small>{m_name}: "
+                                    f"<span class='{m_css}'>{m_val:.2f}"
+                                    f"</span></small>",
+                                    unsafe_allow_html=True,
+                                )
+
         # Detailed iteration history
         st.divider()
-        st.subheader("Historico por Iteracao")
+        st.subheader("Historico Detalhado por Iteracao")
         for entry in history:
             it = entry["iteration"]
             with st.expander(f"Iteracao {it}", expanded=(it == len(history))):
@@ -497,18 +652,6 @@ with tab_results:
 
                 st.markdown("**Sugestoes geradas:**")
                 _render_suggestions(entry.get("suggestions", []))
-
-        # Evolution table
-        st.divider()
-        st.subheader("Evolucao dos Prompts")
-        for i, entry in enumerate(history):
-            cols = st.columns([1, 4])
-            with cols[0]:
-                st.metric("Iteracao", entry["iteration"])
-            with cols[1]:
-                for p in entry.get("prompts_used", []):
-                    st.markdown(f"**{p['name']}**")
-                    st.caption(p.get("rationale", ""))
 
         # Raw logs
         all_logs = st.session_state.get("all_logs", [])
