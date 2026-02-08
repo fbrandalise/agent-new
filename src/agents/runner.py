@@ -24,12 +24,15 @@ def runner_node(state: OrchestratorState) -> Dict[str, Any]:
     )
     new_logs.append("=" * 60)
 
+    feedback_results = state.get("feedback_results", [])
+
     # Build a history snapshot for this iteration (returned as single-item
     # list so the Annotated[..., operator.add] reducer appends it).
     history_entry = {
         "iteration": iteration + 1,
         "prompts_used": current_prompts,
         "evaluations": evaluation_results,
+        "feedback": feedback_results,
         "suggestions": suggestions,
     }
 

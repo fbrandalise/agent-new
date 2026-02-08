@@ -16,9 +16,11 @@ class OrchestratorState(TypedDict):
     # Agent outputs
     evaluation_results: List[Dict[str, Any]]
     suggestions: List[Dict[str, Any]]
+    feedback_results: List[Dict[str, Any]]
 
     # Tracking
     iteration: int
     history: Annotated[List[Dict[str, Any]], operator.add]
+    feedback_history: Annotated[List[Dict[str, Any]], operator.add]
     logs: Annotated[List[str], operator.add]
     status: str
