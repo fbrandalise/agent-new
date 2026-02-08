@@ -342,9 +342,17 @@ with tab_run:
 
         graph = build_graph()
 
+        # Layout: left = agent cards, right = live log
+        col_agents, col_log = st.columns([3, 2])
+
+        with col_log:
+            st.markdown("**Log de Execucao**")
+            log_container = st.container(height=520)
+
         # Progress tracking
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        with col_agents:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
         step = 0
         total_steps = max_iterations * 3
 
@@ -352,6 +360,35 @@ with tab_run:
         all_logs: list[str] = []
         full_history: list = []
         last_eval_results: list = []
+
+        def _append_logs(new_lines: list[str]) -> None:
+            """Append log lines and refresh the live log panel."""
+            all_logs.extend(new_lines)
+            with log_container:
+                for line in new_lines:
+                    if line.startswith("="):
+                        st.markdown(
+                            f"<span style='color:#667eea;font-weight:bold'>"
+                            f"{line}</span>",
+                            unsafe_allow_html=True,
+                        )
+                    elif "ERRO" in line:
+                        st.markdown(
+                            f"<span style='color:#dc3545'>{line}</span>",
+                            unsafe_allow_html=True,
+                        )
+                    elif "Score medio" in line or "Resumo" in line:
+                        st.markdown(
+                            f"<span style='color:#28a745'>{line}</span>",
+                            unsafe_allow_html=True,
+                        )
+                    elif line.startswith(">>") or line.startswith("Sugestao"):
+                        st.markdown(
+                            f"<span style='color:#f093fb'>{line}</span>",
+                            unsafe_allow_html=True,
+                        )
+                    elif line.strip():
+                        st.text(line)
 
         for event in graph.stream(
             initial_state, stream_mode="updates"
@@ -362,7 +399,7 @@ with tab_run:
                 progress_bar.progress(pct)
 
                 new_logs = updates.get("logs", [])
-                all_logs.extend(new_logs)
+                _append_logs(new_logs)
 
                 # --- Evaluator ---
                 if node_name == "evaluator":
@@ -372,12 +409,13 @@ with tab_run:
                     eval_results = updates.get("evaluation_results", [])
                     last_eval_results = eval_results
 
-                    st.markdown(
-                        "<div class='agent-card agent-evaluator'>"
-                        "<strong>Agente 1 — Avaliador</strong></div>",
-                        unsafe_allow_html=True,
-                    )
-                    _render_evaluation_results(eval_results)
+                    with col_agents:
+                        st.markdown(
+                            "<div class='agent-card agent-evaluator'>"
+                            "<strong>Agente 1 — Avaliador</strong></div>",
+                            unsafe_allow_html=True,
+                        )
+                        _render_evaluation_results(eval_results)
 
                 # --- Suggester ---
                 elif node_name == "suggester":
@@ -386,13 +424,14 @@ with tab_run:
                     )
                     suggestions = updates.get("suggestions", [])
 
-                    st.markdown(
-                        "<div class='agent-card agent-suggester'>"
-                        "<strong>Agente 2 — Sugestor de Prompts"
-                        "</strong></div>",
-                        unsafe_allow_html=True,
-                    )
-                    _render_suggestions(suggestions)
+                    with col_agents:
+                        st.markdown(
+                            "<div class='agent-card agent-suggester'>"
+                            "<strong>Agente 2 — Sugestor de Prompts"
+                            "</strong></div>",
+                            unsafe_allow_html=True,
+                        )
+                        _render_suggestions(suggestions)
 
                 # --- Runner ---
                 elif node_name == "runner":
@@ -403,19 +442,20 @@ with tab_run:
                     full_history.extend(new_history)
 
                     iteration_num = updates.get("iteration", 0)
-                    st.markdown(
-                        "<div class='agent-card agent-runner'>"
-                        f"<strong>Agente 3 — Executor</strong> "
-                        f"| Iteracao {iteration_num} concluida</div>",
-                        unsafe_allow_html=True,
-                    )
+                    with col_agents:
+                        st.markdown(
+                            "<div class='agent-card agent-runner'>"
+                            f"<strong>Agente 3 — Executor</strong> "
+                            f"| Iteracao {iteration_num} concluida</div>",
+                            unsafe_allow_html=True,
+                        )
 
-                    if iteration_num < max_iterations:
-                        st.markdown("Iniciando proxima iteracao...")
-                    else:
-                        st.markdown("Todas as iteracoes concluidas.")
+                        if iteration_num < max_iterations:
+                            st.markdown("Iniciando proxima iteracao...")
+                        else:
+                            st.markdown("Todas as iteracoes concluidas.")
 
-                    st.divider()
+                        st.divider()
 
         progress_bar.progress(1.0)
         status_text.markdown("**Orquestracao concluida!**")
@@ -423,10 +463,6 @@ with tab_run:
         # Store results in session state for the Results tab
         st.session_state["history"] = full_history
         st.session_state["all_logs"] = all_logs
-
-        # Show logs
-        with st.expander("Logs Completos", expanded=False):
-            st.code("\n".join(all_logs), language="text")
 
 
 # ---- Tab: Results ----------------------------------------------------------
