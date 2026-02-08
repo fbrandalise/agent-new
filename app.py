@@ -659,6 +659,129 @@ with tab_results:
             with st.expander("Logs Completos"):
                 st.code("\n".join(all_logs), language="text")
 
+        # ---- Winner Evaluation ------------------------------------------------
+        st.divider()
+        st.subheader("Avaliacao de Vencedor")
+
+        # Collect best score per prompt across ALL iterations
+        prompt_best: dict[str, dict] = {}  # id -> best record
+        for pt in all_prompts_timeline:
+            score = pt["avg_score"]
+            if score is None:
+                continue
+            pid = pt["id"]
+            if pid not in prompt_best or score > prompt_best[pid]["avg_score"]:
+                prompt_best[pid] = pt
+
+        if prompt_best:
+            ranked = sorted(
+                prompt_best.values(),
+                key=lambda x: x["avg_score"],
+                reverse=True,
+            )
+            winner = ranked[0]
+
+            # --- Winner banner ---
+            st.markdown(
+                f"<div style='"
+                f"background:linear-gradient(135deg,#28a74522,#20c99722);"
+                f"border:2px solid #28a745;border-radius:12px;"
+                f"padding:24px;text-align:center;margin-bottom:16px'>"
+                f"<div style='font-size:2em'>&#127942;</div>"
+                f"<div style='font-size:1.3em;font-weight:bold;"
+                f"color:#28a745;margin:8px 0'>"
+                f"Vencedor: {winner['name']}</div>"
+                f"<div style='font-size:2em;font-weight:bold;"
+                f"color:#155724'>{winner['avg_score']:.2f}</div>"
+                f"<div style='font-size:0.9em;color:#555;"
+                f"margin-top:4px'>Score medio (melhor resultado)</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # --- Winner metrics breakdown ---
+            if winner.get("metrics"):
+                mcols = st.columns(len(winner["metrics"]))
+                for i, (m_name, m_val) in enumerate(
+                    winner["metrics"].items()
+                ):
+                    with mcols[i]:
+                        css = _score_class(m_val)
+                        st.markdown(
+                            f"<div class='metric-box'>"
+                            f"<div style='font-size:0.85em'>{m_name}</div>"
+                            f"<div class='{css}'>{m_val:.2f}</div>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+
+            # --- Winner rationale and template ---
+            st.markdown(f"**Racional:** {winner.get('rationale', '')}")
+            with st.expander("Ver template vencedor"):
+                st.code(winner.get("template", ""), language="text")
+
+            # --- Ranking table ---
+            if len(ranked) > 1:
+                st.markdown("")
+                st.markdown("**Ranking completo**")
+                for pos, pt in enumerate(ranked, 1):
+                    score = pt["avg_score"]
+                    css = _score_class(score)
+                    medal = (
+                        "&#129351;" if pos == 1
+                        else "&#129352;" if pos == 2
+                        else "&#129353;" if pos == 3
+                        else f"#{pos}"
+                    )
+                    metric_details = "  |  ".join(
+                        f"{mn}: {mv:.2f}"
+                        for mn, mv in pt.get("metrics", {}).items()
+                    )
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;"
+                        f"gap:12px;padding:8px 12px;"
+                        f"border-bottom:1px solid #eee'>"
+                        f"<span style='font-size:1.4em;min-width:36px'>"
+                        f"{medal}</span>"
+                        f"<span style='flex:1;font-weight:600'>"
+                        f"{pt['name']}"
+                        f"<span style='font-weight:normal;color:#888;"
+                        f"font-size:0.85em'> (iter {pt['iteration']})"
+                        f"</span></span>"
+                        f"<span class='{css}'>{score:.2f}</span>"
+                        f"<span style='color:#888;font-size:0.8em'>"
+                        f"{metric_details}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                # --- Delta vs initial prompts ---
+                initial_scores = [
+                    pt["avg_score"]
+                    for pt in all_prompts_timeline
+                    if pt["iteration"] == 1 and pt["avg_score"] is not None
+                ]
+                if initial_scores:
+                    best_initial = max(initial_scores)
+                    delta = winner["avg_score"] - best_initial
+                    delta_pct = (
+                        (delta / best_initial * 100) if best_initial else 0
+                    )
+                    arrow = "+" if delta >= 0 else ""
+                    color = "#28a745" if delta >= 0 else "#dc3545"
+                    st.markdown(
+                        f"<div style='text-align:center;margin-top:16px;"
+                        f"padding:12px;background:#f8f9fa;"
+                        f"border-radius:8px'>"
+                        f"<span style='font-size:0.95em'>Melhoria vs "
+                        f"melhor prompt inicial: </span>"
+                        f"<span style='font-size:1.3em;font-weight:bold;"
+                        f"color:{color}'>{arrow}{delta:.2f} "
+                        f"({arrow}{delta_pct:.1f}%)</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
         # Export
         st.divider()
         st.download_button(
