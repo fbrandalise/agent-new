@@ -44,14 +44,22 @@ def evaluator_node(state: OrchestratorState) -> Dict[str, Any]:
     for prompt in prompts:
         for product in products:
             # -- 1. Build enrichment prompt from template --
-            enrichment_prompt = prompt["template"].format(
-                product_name=product["name"],
-                category=product["category"],
-                description=product["description"],
-                brand=product["brand"],
-                attributes=json.dumps(
-                    product["attributes"], ensure_ascii=False, indent=2
-                ),
+            # Use .replace() instead of .format() so that JSON curly
+            # braces in LLM-generated templates don't cause KeyErrors.
+            enrichment_prompt = (
+                prompt["template"]
+                .replace("{product_name}", product["name"])
+                .replace("{category}", product["category"])
+                .replace("{description}", product["description"])
+                .replace("{brand}", product["brand"])
+                .replace(
+                    "{attributes}",
+                    json.dumps(
+                        product["attributes"],
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                )
             )
 
             new_logs.append("")
