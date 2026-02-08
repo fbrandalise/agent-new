@@ -82,7 +82,7 @@ with st.sidebar:
     max_iterations = st.slider(
         "Iteracoes de otimizacao",
         min_value=1,
-        max_value=5,
+        max_value=10,
         value=2,
         help="Quantas vezes o ciclo avaliacao->sugestao->execucao roda",
     )
