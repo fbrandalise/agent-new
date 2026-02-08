@@ -332,9 +332,11 @@ with tab_run:
             "current_prompts": INITIAL_PROMPTS,
             "evaluation_results": [],
             "suggestions": [],
+            "feedback_results": [],
             "iteration": 0,
             "max_iterations": max_iterations,
             "history": [],
+            "feedback_history": [],
             "logs": [],
             "status": "starting",
             "model_name": model_name,
@@ -354,7 +356,7 @@ with tab_run:
             progress_bar = st.progress(0)
             status_text = st.empty()
         step = 0
-        total_steps = max_iterations * 3
+        total_steps = max_iterations * 4  # evaluator + feedback + suggester + runner
 
         # Containers for each iteration
         all_logs: list[str] = []
@@ -417,6 +419,36 @@ with tab_run:
                         )
                         _render_evaluation_results(eval_results)
 
+                # --- Feedback ---
+                elif node_name == "feedback":
+                    status_text.markdown(
+                        "**Agente 4 — Feedback Simulado** revisando..."
+                    )
+                    fb_results = updates.get("feedback_results", [])
+
+                    with col_agents:
+                        st.markdown(
+                            "<div class='agent-card' style='"
+                            "background:linear-gradient(135deg,"
+                            "#ffecd222,#fcb69f22);"
+                            "border-left:4px solid #f6a623'>"
+                            "<strong>Agente 4 — Feedback Simulado"
+                            "</strong></div>",
+                            unsafe_allow_html=True,
+                        )
+                        for fb in fb_results:
+                            pos = fb.get("positivos", 0)
+                            neg = fb.get("negativos", 0)
+                            st.markdown(
+                                f"**{fb['prompt_name']}** x "
+                                f"**{fb['product_name']}**: "
+                                f"<span style='color:#28a745'>"
+                                f"+{pos}</span> / "
+                                f"<span style='color:#dc3545'>"
+                                f"-{neg}</span>",
+                                unsafe_allow_html=True,
+                            )
+
                 # --- Suggester ---
                 elif node_name == "suggester":
                     status_text.markdown(
@@ -463,6 +495,11 @@ with tab_run:
         # Store results in session state for the Results tab
         st.session_state["history"] = full_history
         st.session_state["all_logs"] = all_logs
+        st.session_state["feedback_history"] = [
+            fb
+            for entry in full_history
+            for fb in entry.get("feedback", [])
+        ]
 
 
 # ---- Tab: Results ----------------------------------------------------------
@@ -636,6 +673,150 @@ with tab_results:
                                     f"</span></small>",
                                     unsafe_allow_html=True,
                                 )
+
+        # ---- Feedback Reinforcement Summary ------------------------------------
+        st.divider()
+        st.subheader("Feedback do Usuario Simulado")
+
+        # Accumulate feedback across all iterations
+        all_feedback: list[dict] = []
+        for entry in history:
+            it_num = entry["iteration"]
+            for fb in entry.get("feedback", []):
+                fb_copy = dict(fb)
+                fb_copy["iteration"] = it_num
+                all_feedback.append(fb_copy)
+
+        if all_feedback:
+            # Aggregate totals
+            total_pos_all = sum(fb.get("positivos", 0) for fb in all_feedback)
+            total_neg_all = sum(fb.get("negativos", 0) for fb in all_feedback)
+            total_attrs = total_pos_all + total_neg_all
+            approval_rate = (
+                total_pos_all / total_attrs * 100 if total_attrs else 0
+            )
+
+            # KPI cards
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            with kpi1:
+                st.metric("Total de Avaliacoes", len(all_feedback))
+            with kpi2:
+                st.metric("Reforcos Positivos", f"+{total_pos_all}")
+            with kpi3:
+                st.metric("Reforcos Negativos", f"-{total_neg_all}")
+            with kpi4:
+                st.metric("Taxa de Aprovacao", f"{approval_rate:.1f}%")
+
+            # Stacked bar: positivos vs negativos per iteration
+            iter_pos: dict[int, int] = {}
+            iter_neg: dict[int, int] = {}
+            for fb in all_feedback:
+                it_n = fb["iteration"]
+                iter_pos[it_n] = iter_pos.get(it_n, 0) + fb.get("positivos", 0)
+                iter_neg[it_n] = iter_neg.get(it_n, 0) + fb.get("negativos", 0)
+
+            iters_sorted = sorted(iter_pos.keys())
+            fig_fb = go.Figure()
+            fig_fb.add_trace(
+                go.Bar(
+                    name="Positivos",
+                    x=[f"Iter {i}" for i in iters_sorted],
+                    y=[iter_pos.get(i, 0) for i in iters_sorted],
+                    marker_color="#28a745",
+                    text=[f"+{iter_pos.get(i, 0)}" for i in iters_sorted],
+                    textposition="auto",
+                )
+            )
+            fig_fb.add_trace(
+                go.Bar(
+                    name="Negativos",
+                    x=[f"Iter {i}" for i in iters_sorted],
+                    y=[iter_neg.get(i, 0) for i in iters_sorted],
+                    marker_color="#dc3545",
+                    text=[f"-{iter_neg.get(i, 0)}" for i in iters_sorted],
+                    textposition="auto",
+                )
+            )
+            fig_fb.update_layout(
+                title="Reforcos Positivos vs Negativos por Iteracao",
+                barmode="group",
+                yaxis_title="Quantidade de Atributos",
+                height=380,
+            )
+            st.plotly_chart(fig_fb, use_container_width=True)
+
+            # Approval rate evolution
+            approval_by_iter: list[float] = []
+            for i in iters_sorted:
+                p = iter_pos.get(i, 0)
+                n = iter_neg.get(i, 0)
+                approval_by_iter.append(
+                    p / (p + n) * 100 if (p + n) else 0
+                )
+
+            fig_approval = go.Figure()
+            fig_approval.add_trace(
+                go.Scatter(
+                    x=[f"Iter {i}" for i in iters_sorted],
+                    y=approval_by_iter,
+                    mode="lines+markers+text",
+                    text=[f"{v:.0f}%" for v in approval_by_iter],
+                    textposition="top center",
+                    line=dict(color="#f6a623", width=3),
+                    marker=dict(size=10),
+                )
+            )
+            fig_approval.update_layout(
+                title="Evolucao da Taxa de Aprovacao",
+                yaxis_title="Aprovacao (%)",
+                yaxis=dict(range=[0, 105]),
+                height=350,
+            )
+            st.plotly_chart(fig_approval, use_container_width=True)
+
+            # Detailed feedback per iteration
+            for entry in history:
+                it_n = entry["iteration"]
+                fbs = entry.get("feedback", [])
+                if not fbs:
+                    continue
+                with st.expander(
+                    f"Feedback detalhado — Iteracao {it_n}"
+                ):
+                    for fb in fbs:
+                        st.markdown(
+                            f"**{fb['prompt_name']}** x "
+                            f"**{fb['product_name']}** — "
+                            f"<span style='color:#28a745'>"
+                            f"+{fb.get('positivos', 0)}</span> / "
+                            f"<span style='color:#dc3545'>"
+                            f"-{fb.get('negativos', 0)}</span>",
+                            unsafe_allow_html=True,
+                        )
+                        if fb.get("comentario_geral"):
+                            st.caption(fb["comentario_geral"])
+                        items = fb.get("feedbacks", [])
+                        if items:
+                            for item in items:
+                                v = item.get("veredicto", "?")
+                                icon = (
+                                    "+" if v == "positivo" else "-"
+                                )
+                                color = (
+                                    "#28a745"
+                                    if v == "positivo"
+                                    else "#dc3545"
+                                )
+                                st.markdown(
+                                    f"<span style='color:{color}'>"
+                                    f"[{icon}]</span> "
+                                    f"**{item.get('atributo', '?')}** "
+                                    f"= {item.get('valor_gerado', '?')} "
+                                    f"— {item.get('motivo', '')}",
+                                    unsafe_allow_html=True,
+                                )
+        else:
+            st.info("Nenhum feedback disponivel.")
 
         # Detailed iteration history
         st.divider()

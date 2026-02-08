@@ -1,8 +1,9 @@
-"""LangGraph orchestration: wires the three agents into a cyclic graph."""
+"""LangGraph orchestration: wires the four agents into a cyclic graph."""
 
 from langgraph.graph import END, START, StateGraph
 
 from .agents.evaluator import evaluator_node
+from .agents.feedback import feedback_node
 from .agents.runner import runner_node
 from .agents.suggester import suggester_node
 from .state import OrchestratorState
@@ -16,23 +17,25 @@ def _should_continue(state: OrchestratorState) -> str:
 
 
 def build_graph():
-    """Build and compile the 3-agent orchestration graph.
+    """Build and compile the 4-agent orchestration graph.
 
     Flow:
-        START -> evaluator -> suggester -> runner -+-> evaluator  (loop)
-                                                   +-> END
+        START -> evaluator -> feedback -> suggester -> runner -+-> evaluator
+                                                               +-> END
     """
 
     builder = StateGraph(OrchestratorState)
 
     # Nodes
     builder.add_node("evaluator", evaluator_node)
+    builder.add_node("feedback", feedback_node)
     builder.add_node("suggester", suggester_node)
     builder.add_node("runner", runner_node)
 
     # Edges
     builder.add_edge(START, "evaluator")
-    builder.add_edge("evaluator", "suggester")
+    builder.add_edge("evaluator", "feedback")
+    builder.add_edge("feedback", "suggester")
     builder.add_edge("suggester", "runner")
 
     # Conditional loop

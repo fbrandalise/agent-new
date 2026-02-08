@@ -16,11 +16,15 @@ SUGGESTER_SYSTEM = (
     "de produtos de e-commerce."
 )
 
-SUGGESTER_TEMPLATE = """Analise os resultados de avaliacao abaixo de prompts usados para enriquecer fichas tecnicas de produtos.
+SUGGESTER_TEMPLATE = """Analise os resultados de avaliacao e o feedback do usuario simulado abaixo de prompts usados para enriquecer fichas tecnicas de produtos.
 
 ## Resultados da Avaliacao
 
 {evaluation_summary}
+
+## Feedback do Usuario Simulado
+
+{feedback_summary}
 
 ## Prompts Atuais
 
@@ -28,7 +32,8 @@ SUGGESTER_TEMPLATE = """Analise os resultados de avaliacao abaixo de prompts usa
 
 ## Sua Tarefa
 
-Com base nos resultados, sugira {num_suggestions} novas variacoes de prompt que melhorem os scores.
+Com base nos resultados da avaliacao E no feedback do usuario (atributos marcados como positivos e negativos), sugira {num_suggestions} novas variacoes de prompt que melhorem os scores.
+Preste atencao especial nos atributos marcados como negativos pelo usuario — eles indicam problemas concretos que os novos prompts devem corrigir.
 
 Para cada sugestao:
 1. Identifique os pontos fracos dos prompts atuais
@@ -87,6 +92,32 @@ def suggester_node(state: OrchestratorState) -> Dict[str, Any]:
         )
     evaluation_summary = "\n".join(eval_parts)
 
+    # Build feedback summary
+    feedback_results = state.get("feedback_results", [])
+    fb_parts: list[str] = []
+    for fb in feedback_results:
+        fb_parts.append(
+            f"- {fb['prompt_name']} x {fb['product_name']}: "
+            f"+{fb['positivos']} positivos / -{fb['negativos']} negativos"
+        )
+        # Include up to 5 negative feedbacks as concrete examples
+        neg_items = [
+            item
+            for item in fb.get("feedbacks", [])
+            if item.get("veredicto") == "negativo"
+        ]
+        for item in neg_items[:5]:
+            fb_parts.append(
+                f"  NEGATIVO: atributo '{item.get('atributo', '?')}' "
+                f"= '{item.get('valor_gerado', '?')}' — "
+                f"{item.get('motivo', '')}"
+            )
+        if fb.get("comentario_geral"):
+            fb_parts.append(f"  Comentario: {fb['comentario_geral']}")
+    feedback_summary = (
+        "\n".join(fb_parts) if fb_parts else "Nenhum feedback disponivel."
+    )
+
     # Build prompts summary
     prompts_parts: list[str] = []
     for p in current_prompts:
@@ -99,6 +130,7 @@ def suggester_node(state: OrchestratorState) -> Dict[str, Any]:
 
     user_prompt = SUGGESTER_TEMPLATE.format(
         evaluation_summary=evaluation_summary,
+        feedback_summary=feedback_summary,
         current_prompts=prompts_summary,
         num_suggestions=2,
     )
