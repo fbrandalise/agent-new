@@ -1,5 +1,7 @@
 """Streamlit visual interface for the LLM Evaluator Agent Orchestration."""
 
+import src.ssl_config  # noqa: F401  — must be first to patch SSL globally
+
 import json
 import os
 import time

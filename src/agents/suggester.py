@@ -1,8 +1,11 @@
 """Agent 2 - Suggester: analyses evaluation results and proposes new prompts."""
 
+import src.ssl_config  # noqa: F401  — ensure SSL patch is active
+
 import json
 from typing import Any, Dict
 
+import httpx
 from langchain_openai import ChatOpenAI
 
 from ..state import OrchestratorState
@@ -53,7 +56,11 @@ def suggester_node(state: OrchestratorState) -> Dict[str, Any]:
     """
 
     model_name = state.get("model_name", "gpt-4o-mini")
-    llm = ChatOpenAI(model=model_name, temperature=0.7)
+    llm = ChatOpenAI(
+        model=model_name,
+        temperature=0.7,
+        http_client=httpx.Client(verify=False),
+    )
 
     evaluation_results = state["evaluation_results"]
     current_prompts = state["current_prompts"]
