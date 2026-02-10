@@ -37,6 +37,7 @@ st.markdown(
     }
     .agent-evaluator { background: linear-gradient(135deg, #667eea22, #764ba222); border-left: 4px solid #667eea; }
     .agent-suggester { background: linear-gradient(135deg, #f093fb22, #f5576c22); border-left: 4px solid #f093fb; }
+    .agent-feedback  { background: linear-gradient(135deg, #ffecd222, #fcb69f22); border-left: 4px solid #f6a623; }
     .agent-runner    { background: linear-gradient(135deg, #4facfe22, #00f2fe22); border-left: 4px solid #4facfe; }
     .metric-box {
         background: #f0f2f6;
@@ -84,7 +85,7 @@ with st.sidebar:
         min_value=1,
         max_value=10,
         value=2,
-        help="Quantas vezes o ciclo avaliacao->sugestao->execucao roda",
+        help="Quantas vezes o ciclo avaliacao->feedback->sugestao->execucao roda",
     )
 
     st.divider()
@@ -101,6 +102,7 @@ with st.sidebar:
         "```\n"
         "START\n"
         "  |-> Agente 1: Avaliador\n"
+        "  |-> Agente 4: Feedback\n"
         "  |-> Agente 2: Sugestor\n"
         "  |-> Agente 3: Executor\n"
         "  |-> (loop ou END)\n"
@@ -112,8 +114,9 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 st.title("Orquestracao de Agentes — Avaliador de LLM")
 st.markdown(
-    "Avaliacao automatica de qualidade de enriquecimento de fichas tecnicas "
-    "de produtos usando **LangGraph** + **DeepEval**."
+    "Orquestracao de **4 agentes** para avaliacao automatica de qualidade de "
+    "enriquecimento de fichas tecnicas de produtos usando **LangGraph** + "
+    "**DeepEval**: Avaliador, Feedback Simulado, Sugestor de Prompts e Executor."
 )
 
 # ---------------------------------------------------------------------------
@@ -428,10 +431,7 @@ with tab_run:
 
                     with col_agents:
                         st.markdown(
-                            "<div class='agent-card' style='"
-                            "background:linear-gradient(135deg,"
-                            "#ffecd222,#fcb69f22);"
-                            "border-left:4px solid #f6a623'>"
+                            "<div class='agent-card agent-feedback'>"
                             "<strong>Agente 4 — Feedback Simulado"
                             "</strong></div>",
                             unsafe_allow_html=True,
