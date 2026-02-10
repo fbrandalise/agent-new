@@ -12,9 +12,9 @@ Esta prova de conceito demonstra um sistema de **otimizacao automatica de prompt
 
 O problema que resolve: quando usamos um LLM (Large Language Model) para enriquecer dados de catalogo de produtos, a qualidade do resultado depende diretamente da qualidade do prompt — a instrucao que damos ao modelo. Hoje, otimizar esses prompts e um processo manual, lento e dependente de tentativa e erro.
 
-**O que esta PoC faz:** coloca tres agentes de IA trabalhando em ciclo para avaliar, sugerir melhorias e re-testar prompts de forma autonoma, buscando melhoria continua sem intervencao humana.
+**O que esta PoC faz:** coloca quatro agentes de IA trabalhando em ciclo para avaliar, coletar feedback simulado de usuario, sugerir melhorias e re-testar prompts de forma autonoma, buscando melhoria continua com reforco humano simulado.
 
-**Resultado esperado:** reducao significativa do tempo de otimizacao de prompts e aumento mensuravel na qualidade do enriquecimento de dados de produto.
+**Resultado esperado:** reducao significativa do tempo de otimizacao de prompts e aumento mensuravel na qualidade do enriquecimento de dados de produto, guiado por feedback atributo a atributo.
 
 ---
 
@@ -31,14 +31,16 @@ Otimizar prompts e um processo:
 - **Manual** — engenheiros testam variacoes uma a uma
 - **Subjetivo** — sem metricas padronizadas de qualidade
 - **Lento** — cada iteracao exige revisao humana
+- **Sem feedback estruturado** — nao ha mecanismo para capturar o que o usuario aprovaria ou rejeitaria
 - **Nao escalavel** — cada categoria de produto pode precisar de prompts diferentes
 
 ### O que esta PoC propoe
 Automatizar o ciclo inteiro de avaliacao e otimizacao usando agentes autonomos que:
 1. Medem qualidade com metricas objetivas
-2. Sugerem melhorias baseadas nos resultados
-3. Testam as melhorias automaticamente
-4. Repetem o ciclo ate atingir o limite configurado
+2. Simulam feedback de um usuario revisando cada atributo gerado
+3. Sugerem melhorias baseadas nos resultados E no feedback
+4. Testam as melhorias automaticamente
+5. Acumulam reforcos positivos e negativos para guiar novas rodadas
 
 ---
 
@@ -67,19 +69,32 @@ Automatizar o ciclo inteiro de avaliacao e otimizacao usando agentes autonomos q
                       │
                       v
 ┌─────────────────────────────────────────────────────────────┐
+│              AGENTE 4 — FEEDBACK SIMULADO                    │
+│                                                              │
+│  Simula um usuario humano revisando cada atributo gerado:    │
+│  1. Compara cada atributo com o ground truth                 │
+│  2. Da veredicto "positivo" ou "negativo" por atributo       │
+│  3. Justifica cada decisao (ex: "valor inventado",           │
+│     "unidade incorreta", "atributo irrelevante")             │
+│  4. Acumula contagem de reforcos (+/-) no historico          │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+                      v
+┌─────────────────────────────────────────────────────────────┐
 │              AGENTE 2 — SUGESTOR                             │
 │                                                              │
-│  Recebe os scores do Agente 1 e:                             │
+│  Recebe os scores do Agente 1 E o feedback do Agente 4:     │
 │  1. Identifica pontos fracos de cada prompt                  │
-│  2. Propoe 2 novas variacoes com racional detalhado          │
-│  3. Explica POR QUE cada mudanca deve melhorar o score       │
+│  2. Presta atencao especial nos atributos NEGATIVOS          │
+│  3. Propoe 2 novas variacoes com racional detalhado          │
+│  4. Explica POR QUE cada mudanca deve corrigir os problemas  │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       v
 ┌─────────────────────────────────────────────────────────────┐
 │              AGENTE 3 — EXECUTOR                             │
 │                                                              │
-│  1. Salva os resultados da iteracao no historico             │
+│  1. Salva resultados, feedback e sugestoes no historico       │
 │  2. Prepara os novos prompts como entrada                    │
 │  3. Decide: rodar mais um ciclo ou finalizar?                │
 └─────────────────────┬───────────────────────────────────────┘
@@ -93,33 +108,43 @@ Automatizar o ciclo inteiro de avaliacao e otimizacao usando agentes autonomos q
     ┌─────────────┘   └──────────────┐
     v                                v
   AGENTE 1                     FIM: Resultados
-  (novo ciclo)                 comparativos e
-                               historico completo
+  (novo ciclo)                 comparativos,
+                               feedback acumulado
+                               e vencedor
 ```
 
 ### Como os agentes se comunicam
 
-Os tres agentes compartilham um **estado unico** (state) gerenciado pelo LangGraph. Cada agente le o que precisa do estado, executa sua logica e devolve suas atualizacoes. Nao ha chamadas diretas entre agentes — toda comunicacao passa pelo estado centralizado.
+Os quatro agentes compartilham um **estado unico** (state) gerenciado pelo LangGraph. Cada agente le o que precisa do estado, executa sua logica e devolve suas atualizacoes. Nao ha chamadas diretas entre agentes — toda comunicacao passa pelo estado centralizado.
 
 ```
-┌─────────────────────────────────────┐
-│          ESTADO COMPARTILHADO        │
-│                                      │
-│  • produtos (entrada fixa)           │
-│  • prompts atuais (evolui a cada     │
-│    iteracao)                         │
-│  • resultados da avaliacao           │
-│  • sugestoes do sugestor             │
-│  • historico completo                │
-│  • logs de execucao                  │
-│  • iteracao atual / maximo           │
-└─────────────────────────────────────┘
-       ▲            ▲            ▲
-       │            │            │
-   Agente 1     Agente 2     Agente 3
-   (le e        (le e        (le e
-    escreve)     escreve)     escreve)
+┌──────────────────────────────────────────┐
+│          ESTADO COMPARTILHADO             │
+│                                           │
+│  • produtos (entrada fixa)                │
+│  • prompts atuais (evolui a cada          │
+│    iteracao)                              │
+│  • resultados da avaliacao                │
+│  • feedback por atributo (+/-)            │
+│  • historico de feedback acumulado        │
+│  • sugestoes do sugestor                  │
+│  • historico completo                     │
+│  • logs de execucao                       │
+│  • iteracao atual / maximo                │
+└──────────────────────────────────────────┘
+       ▲         ▲         ▲         ▲
+       │         │         │         │
+   Agente 1  Agente 4  Agente 2  Agente 3
+  (avaliador)(feedback)(sugestor)(executor)
 ```
+
+### O papel do feedback na melhoria continua
+
+O Agente 4 (Feedback Simulado) introduz um mecanismo de **reforco** no ciclo. Para cada atributo gerado, ele decide se o atributo e aceitavel (+) ou problematico (-), com justificativa. Esses reforcos:
+
+1. **Informam o Agente 2**: os atributos negativos viram exemplos concretos de problemas a corrigir nos novos prompts
+2. **Se acumulam ao longo das iteracoes**: o historico de feedback cresce, permitindo medir se a taxa de aprovacao evolui
+3. **Fornecem metricas complementares**: enquanto DeepEval mede qualidade de forma automatica, o feedback simula a perspectiva do usuario final
 
 ---
 
@@ -130,10 +155,10 @@ Os tres agentes compartilham um **estado unico** (state) gerenciado pelo LangGra
 | Camada             | Tecnologia         | O que faz                                                     | Por que foi escolhida                                                |
 |--------------------|--------------------|---------------------------------------------------------------|----------------------------------------------------------------------|
 | **Orquestracao**   | LangGraph          | Define o grafo de agentes, controla fluxo e loop              | Framework da LangChain para agentes com estado; padrao de mercado    |
-| **LLM**           | OpenAI (GPT-4o)    | Executa o enriquecimento e gera sugestoes de prompt           | API mais madura, suporte a JSON mode, custo/beneficio                |
+| **LLM**           | OpenAI (GPT-4o)    | Executa o enriquecimento, feedback e sugestoes                | API mais madura, suporte a JSON mode, custo/beneficio                |
 | **Avaliacao**      | DeepEval           | Mede qualidade do output com metricas customizaveis           | Framework open-source, gratuito, nativo para avaliacao de LLMs       |
 | **Interface**      | Streamlit          | Dashboard interativo com execucao em tempo real               | Prototipagem rapida em Python, sem necessidade de frontend separado  |
-| **Visualizacao**   | Plotly             | Graficos comparativos (barras e radar)                        | Graficos interativos, integrado com Streamlit                        |
+| **Visualizacao**   | Plotly             | Graficos comparativos (barras, radar, linha)                  | Graficos interativos, integrado com Streamlit                        |
 | **Integracao LLM** | LangChain          | Wrapper padronizado para chamadas ao LLM                      | Abstrai provider (OpenAI, Azure, Anthropic), facilita troca futura   |
 
 ### Detalhamento das tecnologias-chave
@@ -145,7 +170,7 @@ Conceitos principais:
 - **StateGraph**: grafo onde cada no e um agente e as arestas definem o fluxo
 - **State**: dicionario tipado compartilhado entre todos os agentes
 - **Conditional Edges**: decisoes de roteamento (continuar o loop ou finalizar)
-- **Streaming**: permite acompanhar a execucao no em tempo real na interface
+- **Streaming**: permite acompanhar a execucao em tempo real na interface
 
 #### DeepEval — Avaliacao de Qualidade
 DeepEval e um framework open-source para avaliacao de LLMs. Usamos o modulo **GEval** que permite definir criterios de avaliacao em linguagem natural e usa um LLM para pontuar o resultado de 0 a 1.
@@ -158,13 +183,23 @@ Metricas configuradas nesta PoC:
 | **Precisao**   | Correcao factual dos valores preenchidos             | Disse que Galaxy S24 tem "Android 12" (incorreto) |
 | **Formato**    | Qualidade estrutural do JSON de saida                | Chaves inconsistentes, JSON mal formado          |
 
+#### Feedback Simulado — Reforco por Atributo
+O Agente 4 complementa as metricas automaticas com uma **perspectiva de usuario**. Para cada atributo gerado:
+
+| Veredicto   | Criterio                                                              | Exemplo                                        |
+|-------------|-----------------------------------------------------------------------|-------------------------------------------------|
+| **Positivo** | Atributo correto, relevante e bem formatado                          | "memoria_ram": "8GB" — correto                  |
+| **Negativo** | Atributo incorreto, inventado, irrelevante ou com formato inadequado | "processador": "Exynos 2400" — valor incorreto  |
+
+Os reforcos negativos sao repassados como exemplos concretos ao Agente 2, que os usa para gerar prompts que corrijam esses problemas especificos.
+
 #### Streamlit — Interface Visual
 Streamlit permite construir dashboards interativos escrevendo apenas Python. A interface desta PoC possui:
 
 - **Tab Produtos**: visualizacao dos produtos de teste e seus atributos esperados (ground truth)
 - **Tab Prompts**: visualizacao das variacoes de prompt iniciais
-- **Tab Execucao**: acompanhamento em tempo real com cards por agente e painel de log colorido
-- **Tab Resultados**: graficos comparativos, historico detalhado e exportacao JSON
+- **Tab Execucao**: acompanhamento em tempo real com cards por agente, incluindo feedback, e painel de log colorido
+- **Tab Resultados**: graficos comparativos, feedback acumulado, timeline de prompts, avaliacao de vencedor e exportacao JSON
 
 ---
 
@@ -178,11 +213,13 @@ projeto/
 ├── requirements.txt              Dependencias Python
 │
 └── src/
+    ├── ssl_config.py             Configuracao de SSL (ambiente corporativo)
     ├── state.py                  Definicao do estado compartilhado
-    ├── graph.py                  Montagem do grafo LangGraph
+    ├── graph.py                  Montagem do grafo LangGraph (4 agentes)
     │
     ├── agents/
     │   ├── evaluator.py          Agente 1: enriquecimento + avaliacao
+    │   ├── feedback.py           Agente 4: feedback simulado por atributo
     │   ├── suggester.py          Agente 2: sugestao de novos prompts
     │   └── runner.py             Agente 3: controle de ciclo
     │
@@ -193,7 +230,7 @@ projeto/
         └── products.py           Produtos de exemplo e prompts iniciais
 ```
 
-**Total: ~1.200 linhas de codigo Python** distribuidas em 10 arquivos com responsabilidades claras e separadas.
+**Total: ~1.700 linhas de codigo Python** distribuidas em 11 arquivos com responsabilidades claras e separadas.
 
 ---
 
@@ -213,20 +250,36 @@ O agente roda cada prompt no LLM e compara o resultado com os 15 atributos esper
 | Prompt Simples (v1)  | 0.65      | 0.70     | 0.55    | 0.63  |
 | Prompt Estruturado (v2) | 0.80   | 0.82     | 0.88    | 0.83  |
 
+### Iteracao 1 — Agente 4 da feedback
+O agente revisa cada atributo gerado simulando um usuario humano:
+
+| Prompt               | Positivos | Negativos | Taxa de Aprovacao |
+|----------------------|-----------|-----------|-------------------|
+| Prompt Simples (v1)  | +8        | -4        | 67%               |
+| Prompt Estruturado (v2) | +11    | -2        | 85%               |
+
+Exemplos de feedback negativo:
+- `processador: "Exynos 2400"` — NEGATIVO: valor incorreto, Galaxy S24 usa Snapdragon 8 Gen 3
+- `peso: "N/A"` — NEGATIVO: valor generico, deveria ser "167g"
+
 ### Iteracao 1 — Agente 2 sugere
-Com base nos scores, identifica que:
-- v1 tem formato ruim (0.55) — sugere adicionar instrucao explicita de JSON com snake_case
-- v2 pode melhorar completude (0.80) — sugere adicionar lista de categorias de atributos a serem preenchidos
+Com base nos scores E nos feedbacks negativos, identifica que:
+- v1 tem formato ruim (0.55) e 4 atributos negativos — sugere adicionar instrucao de JSON e evitar valores genericos
+- v2 pode melhorar precisao — sugere incluir instrucao para nao inventar valores desconhecidos
 - Gera dois novos prompts (v3, v4) com racional detalhado
 
 ### Iteracao 1 — Agente 3 executa
-Salva tudo no historico e prepara v3 e v4 como entrada para a proxima iteracao.
+Salva tudo (avaliacao + feedback + sugestoes) no historico e prepara v3 e v4 para a proxima iteracao.
 
 ### Iteracao 2 — Ciclo repete
-Agente 1 avalia v3 e v4 → Agente 2 sugere v5 e v6 → Agente 3 finaliza.
+Agente 1 avalia v3 e v4 → Agente 4 revisa → Agente 2 sugere v5 e v6 → Agente 3 finaliza.
 
 ### Resultado final
-Dashboard com graficos comparando todas as variacoes, mostrando a evolucao dos scores e o racional de cada mudanca.
+Dashboard com:
+- Graficos comparando scores de todas as variacoes
+- Evolucao da taxa de aprovacao do feedback (ex: 67% → 85% → 92%)
+- Ranking completo com vencedor e melhoria percentual vs prompt inicial
+- Historico atributo a atributo de cada iteracao
 
 ---
 
@@ -238,8 +291,9 @@ Dashboard com graficos comparando todas as variacoes, mostrando a evolucao dos s
 |---------------------------|-----------------|------------------|------------------------------|
 | Enriquecimento (Agente 1) | 12 chamadas     | ~24.000 tokens   | ~US$ 0.004                   |
 | Avaliacao DeepEval         | 36 chamadas     | ~72.000 tokens   | ~US$ 0.011                   |
-| Sugestao (Agente 2)       | 2 chamadas      | ~8.000 tokens    | ~US$ 0.001                   |
-| **Total**                 | **~50 chamadas** | **~104.000 tokens** | **~US$ 0.016**            |
+| Feedback Simulado (Agente 4) | 12 chamadas  | ~36.000 tokens   | ~US$ 0.005                   |
+| Sugestao (Agente 2)       | 2 chamadas      | ~10.000 tokens   | ~US$ 0.002                   |
+| **Total**                 | **~62 chamadas** | **~142.000 tokens** | **~US$ 0.022**            |
 
 **Nota:** Usando `gpt-4o-mini` o custo e praticamente desprezivel. Com `gpt-4o` o custo sobe ~20x mas ainda se mantem em centavos por execucao.
 
@@ -251,19 +305,71 @@ Dashboard com graficos comparando todas as variacoes, mostrando a evolucao dos s
 |----------------------|-------------------------------------|----------------------------------------------|
 | **Tempo por ciclo**  | Horas a dias                        | Minutos                                      |
 | **Objetividade**     | Avaliacao subjetiva                 | Scores numericos reprodutiveis (0-1)         |
+| **Feedback**         | Revisao informal, sem registro      | Feedback atributo a atributo com justificativa, acumulado no historico |
 | **Rastreabilidade**  | Sem historico padronizado           | Historico completo com racional de cada mudanca |
 | **Escalabilidade**   | 1 engenheiro = 1 teste por vez      | Multiplos produtos e prompts em paralelo     |
-| **Transparencia**    | "Esse prompt parece melhor"         | "Score subiu de 0.63 para 0.83 porque..."    |
+| **Transparencia**    | "Esse prompt parece melhor"         | "Score subiu de 0.63 para 0.83, aprovacao de 67% para 92%, porque..." |
+| **Aprendizado**      | Nao se acumula entre ciclos         | Reforcos positivos/negativos guiam cada nova rodada |
 
 ---
 
-## 9. Limitacoes da PoC e Proximos Passos
+## 9. Mecanismo de Feedback e Reforco
+
+### Como funciona o ciclo de reforco
+
+```
+Iteracao 1:  +8 positivos / -4 negativos  → Taxa: 67%
+                                              │
+                    Agente 2 recebe os 4      │
+                    negativos como exemplos    │
+                    concretos a corrigir       │
+                                              v
+Iteracao 2:  +11 positivos / -2 negativos → Taxa: 85%
+                                              │
+                    Agente 2 recebe os 2      │
+                    negativos restantes        │
+                                              v
+Iteracao 3:  +12 positivos / -1 negativo  → Taxa: 92%
+```
+
+### O que e registrado para cada atributo
+
+| Campo           | Descricao                              | Exemplo                           |
+|-----------------|----------------------------------------|-----------------------------------|
+| **atributo**    | Nome do atributo avaliado              | processador                       |
+| **valor_gerado** | O que o LLM gerou                    | Exynos 2400                       |
+| **veredicto**   | positivo ou negativo                   | negativo                          |
+| **motivo**      | Justificativa do veredicto             | Valor incorreto para Galaxy S24   |
+
+### Metricas de feedback na interface
+
+A aba de Resultados mostra:
+- **KPIs**: total de avaliacoes, reforcos positivos, negativos e taxa de aprovacao
+- **Grafico de barras**: positivos vs negativos por iteracao
+- **Grafico de linha**: evolucao da taxa de aprovacao ao longo das iteracoes
+- **Detalhamento**: feedback atributo a atributo com veredicto colorido e motivo
+
+---
+
+## 10. Avaliacao de Vencedor
+
+Ao final de todas as iteracoes, o sistema automaticamente:
+
+1. **Identifica o vencedor**: o prompt com maior score medio entre todas as iteracoes
+2. **Mostra o ranking completo**: todos os prompts ordenados por score com medalhas
+3. **Calcula a melhoria**: delta absoluto e percentual comparado ao melhor prompt inicial
+4. **Exibe o template vencedor**: racional e template completo prontos para uso em producao
+
+---
+
+## 11. Limitacoes da PoC e Proximos Passos
 
 ### Limitacoes atuais
 - **Dados de teste limitados:** 3 produtos pre-cadastrados com ground truth manual
 - **Sem integracao com catalogo real:** os dados nao vem de um sistema de PIM/catalogo
 - **Modelo unico:** usa apenas OpenAI; nao compara com outros providers (Anthropic, Google, etc.)
 - **Avaliacao usa o proprio LLM:** as metricas DeepEval (GEval) usam um LLM para avaliar outro LLM, o que introduz um vies circular
+- **Feedback simulado:** o Agente 4 e uma simulacao via LLM, nao um usuario humano real
 
 ### Evolucoes sugeridas
 
@@ -271,14 +377,15 @@ Dashboard com graficos comparando todas as variacoes, mostrando a evolucao dos s
 |------------|---------------------------------------------|---------------------------------------------|
 | Alta       | Integrar com catalogo real (API ou CSV)     | Validacao com dados reais de producao        |
 | Alta       | Incluir metricas deterministicas            | Reduzir dependencia do LLM para avaliacao    |
+| Alta       | Substituir feedback simulado por feedback humano real (RLHF) | Validacao genuina de qualidade |
 | Media      | Suporte multi-provider (Anthropic, Gemini)  | Comparar custo/qualidade entre modelos       |
-| Media      | Persistencia de resultados (banco de dados) | Historico entre sessoes                      |
+| Media      | Persistencia de resultados (banco de dados) | Historico entre sessoes e acumulo de feedback |
 | Baixa      | Pipeline CI/CD para rodar automaticamente   | Avaliacao continua em producao               |
 | Baixa      | A/B testing de prompts em producao          | Validar melhorias com usuarios reais         |
 
 ---
 
-## 10. Como Rodar a PoC
+## 12. Como Rodar a PoC
 
 ### Pre-requisitos
 - Python 3.10+
@@ -291,10 +398,11 @@ streamlit run app.py
 ```
 
 A chave da OpenAI pode ser configurada via arquivo `.env` ou diretamente na interface web.
+O numero de iteracoes (ate 10) e configuravel na barra lateral.
 
 ---
 
-## 11. Glossario
+## 13. Glossario
 
 | Termo              | Definicao                                                                                     |
 |--------------------|-----------------------------------------------------------------------------------------------|
@@ -309,3 +417,7 @@ A chave da OpenAI pode ser configurada via arquivo `.env` ou diretamente na inte
 | **Streamlit**      | Framework Python para construcao rapida de dashboards web interativos                          |
 | **DeepEval**       | Framework open-source para avaliacao automatizada de LLMs                                      |
 | **Orquestracao**   | Coordenacao automatica de multiplos agentes em um fluxo de trabalho definido                   |
+| **Feedback simulado** | Avaliacao atributo a atributo feita por um LLM simulando a perspectiva de um usuario humano |
+| **Reforco (+/-)**  | Contagem acumulada de aprovacoes e rejeicoes de atributos ao longo das iteracoes               |
+| **RLHF**          | Reinforcement Learning from Human Feedback — tecnica de aprendizado com feedback humano real    |
+| **Taxa de aprovacao** | Percentual de atributos que receberam reforco positivo em relacao ao total avaliado          |
